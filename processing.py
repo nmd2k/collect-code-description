@@ -20,7 +20,7 @@ from utils.parser.php_parser import PhpParser
 from utils.parser.java_parser import JavaParser
 from utils.parser.javascript_parser import JavascriptParser
 from utils.parser.python_parser import PythonParser
-from utils.tree_utils import import_language_parser, reformat_function_data
+from utils.tree_utils import import_language_parser, reformat_function_data, reformat_line_data, reformat_class_data
 
 
 def args():
@@ -54,28 +54,51 @@ def _processing(dataset, indexs, ast, lang_parser, idx=None, is_file=None):
         raw_code = data["code"]
         tree = ast.parse(bytes(raw_code, "utf8"))
         
-        try:
-            fn_metadata = list(lang_parser.get_definition(tree, raw_code))
-            
-            fn_data = []
-            if len(fn_metadata) > 0:
-                fn_data = reformat_function_data(processed_data, fn_metadata)
+        # try:
+        fn_metadata = list(lang_parser.get_function_definitions(tree, raw_code))
+        class_metadata = list(lang_parser.get_class_definitions(tree, raw_code))
+        line_metadata = list(lang_parser.get_line_definitions(tree, raw_code))
+        
+        fn_data, class_data, line_data = [], [], []
+        if len(fn_metadata) > 0:
+            fn_data = reformat_function_data(processed_data, fn_metadata)
+        
+        if len(class_metadata) > 0:
+            class_data = reformat_class_data(processed_data, class_metadata)
+        
+        if len(line_metadata) > 0:
+            line_data = reformat_line_data(processed_data, line_metadata)
 
-            # We only take function which has docstring (block_comment) and
-            # their docstring is larger than 3 words and smaller than 256 words
-            for item in fn_data:
-                if item['docstring']['block_comment'] == None:
-                    continue
-                if len(item['docstring_tokens']) <= 3 or len(item['docstring_tokens']) >= 256:
-                    continue
+        # We only take function which has docstring (block_comment) and
+        # their docstring is larger than 3 words and smaller than 256 words
+        for item in fn_data:
+            if item['docstring']['block_comment'] == None:
                 
-                yield item
+                continue
+            if len(item['docstring_tokens']) <= 3 or len(item['docstring_tokens']) >= 256:
+                continue
             
-        except Exception: # (ParseError, AttributeError, TypeError, UnboundLocalError):
-            # with open(os.path.join(os.path.dirname(save_path), f'{id}_fail.jsonl'), 'a') as file:
-            #     json.dump(data, file)
-            #     file.write('\n')
-            pass
+            yield item
+        
+        for item in class_data:
+            if len(item['docstring_tokens']) <= 3 or len(item['docstring_tokens']) >= 256:
+                continue
+            
+            yield item
+            
+
+        for item in line_data:
+            if len(item['comment']) <= 3 or len(item['comment']) >= 256:
+                continue
+            
+            yield item
+            
+        # except Exception: # (ParseError, AttributeError, TypeError, UnboundLocalError):
+        #     # with open(os.path.join(os.path.dirname(save_path), f'{id}_fail.jsonl'), 'a') as file:
+        #     #     json.dump(data, file)
+        #     #     file.write('
+        # ')
+        #     pass
         
 
 def processing(dataset, index, language, save_path, idx=None, is_file=None):
@@ -109,16 +132,34 @@ def processing(dataset, index, language, save_path, idx=None, is_file=None):
     else:
         raise ValueError(f'Language {language} not supported')
     # list_function = list(_processing(dataset, index, ast_parser, language_parser, idx))
-    list_function = _processing(dataset, index, ast_parser, language_parser, idx, is_file)
+    list_data = _processing(dataset, index, ast_parser, language_parser, idx, is_file)
     
-    n_sample = 0
-    with open(os.path.join(save_path, f'batch_{idx}_data.jsonl'), "a") as outfile:
-        for function in list_function:
-            n_sample += 1
-            json.dump(function, outfile, ensure_ascii=False)
-            outfile.write('\n')
+    n_fn, n_class, n_line = 0, 0, 0
+    fn_file = open(os.path.join(save_path, f'batch_{idx}_function_data.jsonl'), "a")
+    class_file = open(os.path.join(save_path, f'batch_{idx}_class_data.jsonl'), "a")
+    line_file = open(os.path.join(save_path, f'batch_{idx}_line_data.jsonl'), "a")
+    
+    for function in list_data:
+        if 'func_name' in function.keys():
+            n_fn += 1
+            json.dump(function, fn_file, ensure_ascii=False)
+            fn_file.write('\n')
             
-    return n_sample
+        elif 'class_name' in function.keys():
+            n_class += 1
+            json.dump(function, class_file, ensure_ascii=False)
+            class_file.write('\n')
+        
+        else:
+            n_line += 1
+            json.dump(function, line_file, ensure_ascii=False)
+            line_file.write('\n')
+        
+    fn_file.close()
+    class_file.close()
+    line_file.close()
+            
+    return n_fn, n_class, n_line
 
 
 def start_executor(dataset, language, save_path, split, is_file):
@@ -141,47 +182,33 @@ def start_executor(dataset, language, save_path, split, is_file):
     jobs_list = [index_list[x:x+chunk_size] for x in range(0, dataset_size, chunk_size)]  # n set
     # jobs_list = [dataset[x:x+chunk_size] for x in range(0, dataset_size, chunk_size)]  # n set
     
-    futures = []
-    args = []
-    # executor = ProcessPoolExecutor(max_workers=n_worker)
+    # futures = []
+    # args = []
     for idx, job_index in enumerate(jobs_list):
-        # futures.append(executor.submit(processing,
-        #     dataset=dataset,
-        #     index=job_index,
-        #     language=language,
-        #     save_path=save_path,
-        #     idx=idx, is_file=is_file))
-        
-        args.append([dataset, job_index, language, save_path, idx, is_file])
+        # args.append([dataset, job_index, language, save_path, idx, is_file])
+        # for test 1 process
+        processing(dataset, job_index, language, save_path, is_file=is_file)
 
-    print(len(args[1]))
-        # p = multiprocessing.Process(target=processing, args=[])
-        # p.start()
-
-    executor = multiprocessing.Pool(n_worker)
-    result = list(executor.starmap(processing, args))
+    # executor = multiprocessing.Pool(n_worker)
+    # result = list(executor.starmap(processing, args))
                 
-    total = 0
-    # for function in as_completed(futures):
-    #     try:
-    #         res = function.result()
-    #         total += res
-    #     except Exception as exc:
-    #         print(exc)
-        # print(f'Number of sample: {res}')
+    # total_fn, total_class, total_line = 0, 0, 0
+    # for res in result:
+    #     total_fn += res[0]
+    #     total_class += res[1]
+    #     total_line += res[2]
     
-    for res in result:
-        total += res
-    
-    print(f'\n========================\nTotal sample: {total}')
-    
-    # # for test 1 process
-    # processing(dataset, language, save_path)
-    
+    # print(f'
+    # ========================
+    # Total sample | Function: {total_fn} | Class: {total_class} | Line: {total_line}') 
 
 if __name__ == '__main__':
     opt = args()
     split, language, save_path, data_path = opt.split, opt.language, opt.save_path, opt.data_path
+    
+    # debug
+    # data_path = '/media/Z/dungnm31/small_100k_dataset/python/raw/small_data.jsonl'
+    # save_path = '/media/Z/dungnm31/small_100k_dataset/python/test'
     
     is_file = False
     try:

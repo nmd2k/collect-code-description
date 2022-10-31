@@ -122,6 +122,7 @@ def find_kind_have_comment(node, kind:List, comment_parse:List=COMMENT_PARSER) -
     
     return function_node, function_comment
 
+
 def reformat_function_data(info, metadata_list) -> List:
     data_list = []
     for fn in metadata_list:
@@ -137,7 +138,45 @@ def reformat_function_data(info, metadata_list) -> List:
         
         data_list.append(output)
     
+    return data_list
+
+
+def reformat_class_data(info, metadata_list) -> List:
+    data_list = []
+    for fn in metadata_list:
+        output = info.copy()
+        output['class_name'] = fn['identifier']
+        output['code'] = fn['class']
+        output['code_tokens'] = fn['class_tokens']
+        output['original_docstring'] = fn['original_docstring']
+        output['docstring'] = fn['docstring']
+        output['docstring_tokens'] = fn['docstring_tokens']
+        output['docstring_params'] = fn['docstring_param']
+        
+        data_list.append(output)
+    
+    return data_list
+
+  
+def reformat_line_data(info, metadata_list) -> List:
+    data_list = []
+    for fn in metadata_list:
+        output = info.copy()
+        output['parent_name'] = fn['identifier']
+        output['code'] = fn['function']
+        output['code_tokens'] = fn['function_tokens']
+        output['prev_context'] = fn['prev_context']
+        output['next_context'] = fn['next_context']
+        output['original_comment'] = fn['original_comment']
+        output['start_point'] = fn['start_point']
+        output['end_point'] = fn['end_point']
+        output['comment'] = fn['comment']
+        output['comment_tokens'] = fn['comment_tokens']
+        
+        data_list.append(output)
+    
     return data_list    
+
 
 def export_data_to_file(data, kind_list, comment_list, type_name='function'):
     data_list = []
@@ -184,7 +223,8 @@ def export_data_to_file(data, kind_list, comment_list, type_name='function'):
         data_list.append(output)
             
     return data_list
-            
+  
+          
 def extract_code_to_tree(data, tree_dict, save_file):
     try:
         processed_data = {
